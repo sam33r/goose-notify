@@ -64,6 +64,14 @@ void macwin_configureToast(void *win, int width, int height, int offsetY) {
             NSWindowCollectionBehaviorStationary |
             NSWindowCollectionBehaviorIgnoresCycle];
 
+        // Tell window-management tools (yabai, etc.) and the accessibility
+        // tree to ignore this window — it's a toast, not a focusable window.
+        [w setAccessibilityElement:NO];
+        [w setExcludedFromWindowsMenu:YES];
+
+        // Start the window fully transparent — animation will fade it in.
+        [w setAlphaValue:0.0];
+
         NSScreen *s = screenAtCursor();
         NSRect vf = [s visibleFrame];
         NSRect target;
@@ -74,5 +82,22 @@ void macwin_configureToast(void *win, int width, int height, int offsetY) {
         [w setFrame:target display:YES];
 
         [w orderFrontRegardless];
+
+        // Gio's window creation calls activateIgnoringOtherApps +
+        // makeKeyAndOrderFront, which steals focus from whatever the user
+        // was working on. Hand focus back: deactivate our app so the
+        // previously-active app regains key.
+        [NSApp deactivate];
+    });
+}
+
+// macwin_setWindowAlpha animates the entire NSWindow's alpha. This is the
+// cleanest way to fade a Gio window because it bypasses Gio's opaque
+// framebuffer — the entire layer (no matter what Gio painted) fades in/out.
+void macwin_setWindowAlpha(void *win, double alpha) {
+    if (win == NULL) return;
+    NSWindow *w = (__bridge NSWindow *)win;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        [w setAlphaValue:(CGFloat)alpha];
     });
 }

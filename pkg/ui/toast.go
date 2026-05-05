@@ -22,8 +22,6 @@ import (
 	"github.com/sam33r/goose-notify/pkg/macwin"
 )
 
-// WindowTitle is the NSWindow title used to find the window from macwin.
-// Must be unique enough that other apps' windows won't collide.
 const WindowTitle = "goose-notify-toast"
 
 //go:embed fonts/JetBrainsMono-Regular.ttf
@@ -32,7 +30,6 @@ var fontRegular []byte
 //go:embed fonts/JetBrainsMono-Bold.ttf
 var fontBold []byte
 
-// Toast configures the timeline and content for one toast invocation.
 type Toast struct {
 	Title    string
 	Body     string
@@ -70,10 +67,29 @@ func Run(t Toast) error {
 
 	macwin.SetAccessoryPolicy()
 
+	// Find + configure the window once Gio creates it, then drive the fade
+	// via NSWindow.alphaValue from a ticker. This bypasses Gio's opaque
+	// framebuffer — the window's alpha controls compositing directly.
+	startTime := time.Now()
 	go func() {
-		if err := macwin.ConfigureToast(WindowTitle, width, height, t.OffsetY, time.Second); err != nil {
+		handle, err := macwin.ConfigureToast(WindowTitle, width, height, t.OffsetY, time.Second)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "goose-notify: %v\n", err)
 			os.Exit(1)
+		}
+		defer handle.Free()
+
+		ticker := time.NewTicker(8 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			elapsedNs := time.Since(startTime).Nanoseconds()
+			alpha, done := Opacity(elapsedNs, t.FadeIn.Nanoseconds(), t.Duration.Nanoseconds(), t.FadeOut.Nanoseconds())
+			handle.SetAlpha(alpha)
+			if done {
+				time.Sleep(20 * time.Millisecond) // let the last frame flush
+				os.Exit(0)
+			}
+			<-ticker.C
 		}
 	}()
 
@@ -82,7 +98,6 @@ func Run(t Toast) error {
 		return err
 	}
 
-	startTime := time.Now()
 	var ops op.Ops
 	for {
 		switch e := w.Event().(type) {
@@ -90,22 +105,8 @@ func Run(t Toast) error {
 			return e.Err
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
-
-			elapsedNs := time.Since(startTime).Nanoseconds()
-			alpha, done := Opacity(elapsedNs, t.FadeIn.Nanoseconds(), t.Duration.Nanoseconds(), t.FadeOut.Nanoseconds())
-
-			paintToast(gtx, theme, t.Title, t.Body, alpha)
-
-			if done {
-				e.Frame(&ops)
-				go func() {
-					time.Sleep(20 * time.Millisecond)
-					os.Exit(0)
-				}()
-			} else {
-				gtx.Execute(op.InvalidateCmd{})
-				e.Frame(&ops)
-			}
+			paintToast(gtx, theme, t.Title, t.Body)
+			e.Frame(&ops)
 		}
 	}
 }
@@ -116,6 +117,8 @@ func buildTheme() (*material.Theme, error) {
 		return nil, fmt.Errorf("load fonts: %w", err)
 	}
 	th := material.NewTheme()
+	th.Bg = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
+	th.Fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	th.Shaper = text.NewShaper(text.WithCollection([]font.FontFace{
 		{Font: font.Font{Typeface: "JetBrains Mono"}, Face: regular},
 		{Font: font.Font{Typeface: "JetBrains Mono", Weight: font.Bold}, Face: bold},
@@ -123,18 +126,17 @@ func buildTheme() (*material.Theme, error) {
 	return th, nil
 }
 
-func paintToast(gtx layout.Context, th *material.Theme, title, body string, alpha float64) {
-	bgA := uint8(255.0 * 0.92 * alpha)
-	bg := color.NRGBA{R: 0, G: 0, B: 0, A: bgA}
-
+// paintToast draws the rounded black rect with title + body. Always opaque —
+// the per-frame fade animation runs at the NSWindow alpha level, not in
+// pixel colors.
+func paintToast(gtx layout.Context, th *material.Theme, title, body string) {
+	bg := color.NRGBA{R: 0, G: 0, B: 0, A: 255}
 	bounds := image.Rectangle{Max: gtx.Constraints.Max}
 	rrect := clip.RRect{Rect: bounds, NE: 16, NW: 16, SE: 16, SW: 16}
 	paint.FillShape(gtx.Ops, bg, rrect.Op(gtx.Ops))
 
-	titleA := uint8(255.0 * alpha)
-	bodyA := uint8(255.0 * 0.90 * alpha)
-	titleColor := color.NRGBA{R: 255, G: 255, B: 255, A: titleA}
-	bodyColor := color.NRGBA{R: 255, G: 255, B: 255, A: bodyA}
+	titleColor := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	bodyColor := color.NRGBA{R: 230, G: 230, B: 230, A: 255}
 
 	inset := layout.Inset{
 		Top:    unit.Dp(20),
