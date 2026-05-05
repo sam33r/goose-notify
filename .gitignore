@@ -2,6 +2,7 @@
 goose-notify
 goose-notify-*
 test-*
+!test-*.sh
 
 # OS junk
 .DS_Store
