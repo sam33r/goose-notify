@@ -1,0 +1,12 @@
+# Build artifacts
+goose-notify
+goose-notify-*
+test-*
+
+# OS junk
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
