@@ -60,7 +60,7 @@ func ConfigureToast(title string, width, height, offsetY int, timeout time.Durat
 		if time.Now().After(deadline) {
 			return nil, errors.New("macwin: no window with matching title within timeout")
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(time.Millisecond)
 	}
 
 	C.macwin_configureToast(ptr, C.int(width), C.int(height), C.int(offsetY))
