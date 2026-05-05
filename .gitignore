@@ -1,6 +1,6 @@
-# Build artifacts
-goose-notify
-goose-notify-*
+# Build artifacts (anchor to repo root so cmd/goose-notify/ isn't ignored)
+/goose-notify
+/goose-notify-*
 test-*
 !test-*.sh
 

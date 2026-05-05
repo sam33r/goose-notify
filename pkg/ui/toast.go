@@ -70,7 +70,6 @@ func Run(t Toast) error {
 	// Find + configure the window once Gio creates it, then drive the fade
 	// via NSWindow.alphaValue from a ticker. This bypasses Gio's opaque
 	// framebuffer — the window's alpha controls compositing directly.
-	startTime := time.Now()
 	go func() {
 		handle, err := macwin.ConfigureToast(WindowTitle, width, height, t.OffsetY, time.Second)
 		if err != nil {
@@ -79,6 +78,10 @@ func Run(t Toast) error {
 		}
 		defer handle.Free()
 
+		// Start the timeline only after the window exists and is at alpha=0.
+		// Capturing startTime before ConfigureToast would burn the entire
+		// fade-in on the polling/setup phase.
+		startTime := time.Now()
 		ticker := time.NewTicker(8 * time.Millisecond)
 		defer ticker.Stop()
 		for {
